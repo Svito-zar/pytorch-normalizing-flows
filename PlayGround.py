@@ -9,6 +9,8 @@ from torch.distributions import MultivariateNormal
 
 from Flows import VanillaFlow, AffineConstantFlow, SlowMAF, NormalizingFlowModel, ActNorm
 
+from Nets import MLP
+
 BATCH_SZ = 128
 
 
@@ -25,17 +27,10 @@ class DatasetMixture:
 
     def sample(self, n):
         assert n % 4 == 0
-        r = np.r_[np.random.randn(n // 4, 2) * 0.25 + np.array([2, 0]),
+        r = np.r_[np.random.randn(n // 4, 2) * 0.5 + np.array([5, 0]),
                   np.random.randn(n // 4, 2) * 0.5 + np.array([0, 0]),
-                  np.random.randn(n // 4, 2) * 0.5 + np.array([2, 2]),
-                  np.random.randn(n // 4, 2) * 0.25 + np.array([-2, 2])]
-        """
-        r = np.r_[np.random.randn(n // 4, 2) * 0.05 + np.array([2, 0]),
-                  np.random.randn(n // 4, 2) * 0.05 + np.array([0, 0]),
-                  np.random.randn(n // 4, 2) * 0.05 + np.array([-2, 0])]
-            #,
-            #      np.random.randn(n // 4, 2) * 0.05 + np.array([-2, 2])]
-        """
+                  np.random.randn(n // 4, 2) * 0.5 + np.array([5, 5]),
+                  np.random.randn(n // 4, 2) * 0.5 + np.array([-10, 5])]
         return torch.from_numpy(r.astype(np.float32))
 
 class DatasetMoons:
@@ -54,27 +49,33 @@ plt.axis('equal');
 #plt.show()
 
 ##########################   FLOW itself   ##############################
-prior = MultivariateNormal(torch.zeros(2), torch.eye(2))
+netw = MLP(2,2,2)
 
 # Vanila Flow
-my_flow = [AffineConstantFlow(dim=2) for i in range(5)]
-vanila_flow = [VanillaFlow(dim=2) for i in range(3)]
+my_flow = [AffineConstantFlow(dim=2) for i in range(2)]
+vanila_flow = [VanillaFlow(dim=2) for i in range(2)]
 maf_flow = [SlowMAF(dim=2, parity=True) for _ in my_flow]
 norms = [ActNorm(dim=2) for _ in my_flow]
 flows = list(itertools.chain(*zip(my_flow, maf_flow, norms, vanila_flow)))
 
 # construct the model
-model = NormalizingFlowModel(prior, flows)
+model = NormalizingFlowModel(flows)
 
 # optimizer
-optimizer = optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-8) # todo tune WD
+optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo tune WD
 print("number of params: ", sum(p.numel() for p in model.parameters()))
 
 model.train()
-for k in range(20000):
+for k in range(10000):
+
     x = d.sample(BATCH_SZ)
 
-    zs, prior_logprob, log_det = model(x)
+    # Calculate NN-based prior
+    mean = torch.mean(netw(x), dim=0)
+    variance = torch.var(netw(x), dim=0)
+    prior = MultivariateNormal(mean, torch.diag(variance))
+
+    zs, prior_logprob, log_det = model.forward(x, prior)
     logprob = prior_logprob + log_det
     loss = -torch.sum(logprob)  # NLL
 
@@ -82,22 +83,27 @@ for k in range(20000):
     loss.backward()
     optimizer.step()
 
-    if k % 2000 == 0:
+    if k % 1000 == 0:
 
         print(k,": ", loss.item())
 
         model.eval()
 
         x = d.sample(128)
-        zs, prior_logprob, log_det = model(x)
+
+        mean = torch.mean(netw(x), dim=0)
+        variance = torch.var(netw(x), dim=0)
+        prior = MultivariateNormal(mean, torch.diag(variance))
+
+        zs, prior_logprob, log_det = model(x, prior)
         z = zs[-1]
 
         reconstr, inv_log_det = model.backward(z)
         r = reconstr[-1].detach().numpy()
 
-        x = x.detach().numpy()
+        x_np = x.detach().numpy()
         z = z.detach().numpy()
-        p = model.prior.sample([128, 2]).squeeze()
+        p = prior.sample([128]).squeeze()
         plt.figure(figsize=(10, 5))
         plt.subplot(121)
         plt.scatter(p[:, 0], p[:, 1], c='g', s=5)
@@ -108,7 +114,8 @@ for k in range(20000):
 
 
         x = d.sample(128)
-        zs, prior_logprob, log_det = model(x)
+
+        zs, prior_logprob, log_det = model(x, prior)
         z = zs[-1]
 
         reconstr, inv_log_det = model.backward(z)
@@ -144,7 +151,7 @@ for k in range(20000):
 
         
 
-        zs = model.sample(128 * 8)
+        zs = model.sample(128 * 8, prior)
         z = zs[-1]
         z = z.detach().numpy()
 

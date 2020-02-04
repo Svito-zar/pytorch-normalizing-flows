@@ -46,13 +46,21 @@ class MLP(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(nin, nh),
-            nn.LeakyReLU(0.2),
+            nn.Tanh(),
+            nn.Dropout(0.2),
             nn.Linear(nh, nh),
-            nn.LeakyReLU(0.2),
+            nn.LeakyReLU(),
+            nn.Dropout(0.2),
             nn.Linear(nh, nh),
-            nn.LeakyReLU(0.2),
+            nn.Tanh(),
+            nn.Dropout(0.2),
             nn.Linear(nh, nout),
         )
+
+    """
+    
+    
+    """
 
     def forward(self, x):
         return self.net(x)

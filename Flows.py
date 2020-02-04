@@ -187,21 +187,20 @@ class NormalizingFlow(nn.Module):
 class NormalizingFlowModel(nn.Module):
     """ A Normalizing Flow Model is a (prior, flow) pair """
 
-    def __init__(self, prior, flows):
+    def __init__(self,flows):
         super().__init__()
-        self.prior = prior
         self.flow = NormalizingFlow(flows)
 
-    def forward(self, x):
+    def forward(self, x, prior):
         zs, log_det = self.flow.forward(x)
-        prior_logprob = self.prior.log_prob(zs[-1]).view(x.size(0), -1).sum(1)
+        prior_logprob = prior.log_prob(zs[-1]).view(x.size(0), -1).sum(1)
         return zs, prior_logprob, log_det
 
     def backward(self, z):
         xs, log_det = self.flow.backward(z)
         return xs, log_det
 
-    def sample(self, num_samples):
-        z = self.prior.sample((num_samples,))
+    def sample(self, num_samples, prior):
+        z = prior.sample((num_samples,))
         xs, _ = self.flow.backward(z)
         return xs
