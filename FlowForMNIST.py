@@ -121,9 +121,10 @@ test_loader = torch.utils.data.DataLoader(
 
 ##########################   FLOW itself   ##############################
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 netw = MLP(1, 784, 256)
 
-# Vanila Flow
 aff_flow = [AffineConstantFlow(dim=784) for i in range(3)]
 coupling_flow = [CouplingLayer(784, 256, i%2==1) for i in range(3)]
 maf_flow = [SlowMAF(dim=784, parity=True) for _ in aff_flow]
@@ -131,7 +132,7 @@ norms = [ActNorm(dim=784) for _ in coupling_flow]
 flows = list(itertools.chain(*zip(aff_flow, maf_flow, coupling_flow, norms)))
 
 # construct the model
-model = NormalizingFlowModel(flows)
+model = NormalizingFlowModel(flows).to(device)
 
 # optimizer
 optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo tune WD
@@ -146,6 +147,8 @@ dim = 784
 
 losses = []
 
+
+
 # train the model
 for epoch in range(num_epochs):
 
@@ -157,8 +160,8 @@ for epoch in range(num_epochs):
 
             gt = labels[0:3]
 
-            labels = labels.reshape(batch_size, 784)
-            digits = minibatch.unsqueeze(1).float()
+            labels = labels.reshape(batch_size, 784).to(device)
+            digits = minibatch.unsqueeze(1).float().to(device)
 
             model.zero_grad()
 
@@ -206,8 +209,7 @@ for epoch in range(num_epochs):
                 det = log_det + inv_log_det
                 print("Det check: ", det.sum())
 
-
-                plot_samples(gt, r[:3], epoch)
+                #plot_samples(gt, r[:3], epoch)
 
                 zs = model.sample(128, prior)
                 z = zs[-1]
