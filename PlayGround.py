@@ -7,7 +7,7 @@ import torch.optim as optim
 from sklearn import datasets
 from torch.distributions import MultivariateNormal
 
-from Flows import VanillaFlow, AffineConstantFlow, SlowMAF, NormalizingFlowModel, ActNorm
+from Flows import VanillaFlow, AffineConstantFlow, SlowMAF, NormalizingFlowModel, ActNorm, RealNVP, CouplingLayer
 
 from Nets import MLP
 
@@ -51,12 +51,14 @@ plt.axis('equal');
 ##########################   FLOW itself   ##############################
 netw = MLP(2,2,2)
 
-# Vanila Flow
-my_flow = [AffineConstantFlow(dim=2) for i in range(2)]
-vanila_flow = [VanillaFlow(dim=2) for i in range(2)]
-maf_flow = [SlowMAF(dim=2, parity=True) for _ in my_flow]
-norms = [ActNorm(dim=2) for _ in my_flow]
-flows = list(itertools.chain(*zip(my_flow, maf_flow, norms, vanila_flow)))
+aff_flow = [AffineConstantFlow(dim=2) for i in range(3)]
+coupling_flow = [CouplingLayer(2, 5, i%2==1) for i in range(3)]
+maf_flow = [SlowMAF(dim=2, parity=True) for _ in aff_flow]
+norms = [ActNorm(dim=2) for _ in coupling_flow]
+flows = list(itertools.chain(*zip(aff_flow, maf_flow, coupling_flow, norms)))
+
+#new_flow = [RealNVP(2,2,20,8) for i in range(2)]
+
 
 # construct the model
 model = NormalizingFlowModel(flows)
@@ -66,7 +68,7 @@ optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo t
 print("number of params: ", sum(p.numel() for p in model.parameters()))
 
 model.train()
-for k in range(10000):
+for k in range(20000):
 
     x = d.sample(BATCH_SZ)
 
@@ -83,7 +85,7 @@ for k in range(10000):
     loss.backward()
     optimizer.step()
 
-    if k % 1000 == 0:
+    if k % 3000 == 0:
 
         print(k,": ", loss.item())
 

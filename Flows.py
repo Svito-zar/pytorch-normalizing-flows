@@ -14,27 +14,30 @@ class VanillaFlow(nn.Module):
 
     def __init__(self, dim):
         super().__init__()
-        self.matrix = nn.Parameter(torch.randn(dim, dim)+torch.ones(dim, dim), requires_grad=True)
-        self.bias = nn.Parameter(torch.randn(dim)/3, requires_grad=True)
+        self.matrix = nn.Parameter(torch.eye(dim, dim), requires_grad=True)
+        self.bias = nn.Parameter(torch.zeros(dim), requires_grad=True)
         self.activation = MyLeakyReLU(dim)
 
     def forward(self, x):
-        z = self.activation.forward(F.linear(x, self.matrix) + self.bias)
 
-        inverse_m = torch.inverse(self.matrix)
-        x_hat = F.linear(self.activation.backward(z) - self.bias, inverse_m)  #
+        tria_matrix = torch.triu(self.matrix)
 
-        #z = F.linear(x, self.matrix) + self.bias
-        log_det = torch.torch.slogdet(self.matrix).logabsdet + self.activation.log_det(F.linear(x, self.matrix) + self.bias)
+        z = self.activation.forward(F.linear(x, tria_matrix) + self.bias)
 
-
+        log_det = torch.torch.slogdet(tria_matrix).logabsdet + self.activation.log_det(self.activation.backward(z))
 
         return z, log_det
 
     def backward(self, z):
-        inverse_m = torch.inverse(self.matrix)
-        x = F.linear(self.activation.backward(z) - self.bias, inverse_m) #
-        log_det = torch.torch.slogdet(inverse_m).logabsdet - self.activation.log_det(F.linear(x, self.matrix) + self.bias)
+
+        tria_matrix = torch.triu(self.matrix)
+
+        z_min_bias = torch.transpose(self.activation.backward(z) - self.bias, 0, 1)
+        x_hat = torch.triangular_solve(z_min_bias, tria_matrix, upper=True)[0]
+        x = torch.transpose(x_hat, 0, 1)
+
+        log_det = -torch.torch.slogdet(tria_matrix).logabsdet - self.activation.log_det(self.activation.backward(z))
+
         return x, log_det
 
 
@@ -62,6 +65,107 @@ class AffineConstantFlow(nn.Module):
         x = (z - t) * torch.exp(-s)
         log_det = torch.sum(-s, dim=1)
         return x, log_det
+
+
+
+class CouplingLayer(nn.Module):
+    """Coupling layer in RealNVP.
+
+    Args:
+        in_channels (int): Number of channels in the input.
+        mid_channels (int): Number of channels in the `s` and `t` network.
+        num_blocks (int): Number of residual blocks in the `s` and `t` network.
+        reverse_mask (bool): Whether to reverse the mask. Useful for alternating masks.
+    """
+
+    def __init__(self, in_features, mid_channels, reverse_mask):
+        super(CouplingLayer, self).__init__()
+
+        # Save mask info
+        self.reverse_mask = reverse_mask
+
+        # Build scale and translate network
+        in_features //= 2
+
+        self.st_net = MLP(in_features, in_features * 2, mid_channels)
+
+        # Learnable scale for s
+        self.rescale = nn.utils.weight_norm(Rescale(in_features))
+
+    def forward(self, x):
+
+        # Channel-wise mask
+        if self.reverse_mask:
+            x_id, x_change = x.chunk(2, dim=1)
+        else:
+            x_change, x_id = x.chunk(2, dim=1)
+
+        st = self.st_net(x_id)
+        s, t = st.chunk(2, dim=1)
+        s = torch.tanh(s)
+
+        # ToDo: fix rescale
+        # s = self.rescale(torch.tanh(s))
+
+        # Scale and translate
+        exp_s = s.exp()
+        if torch.isnan(exp_s).any():
+            raise RuntimeError('Scale factor has NaN entries')
+        x_change = (x_change + t) * exp_s
+
+        # Add log-determinant of the Jacobian
+        log_det = s.view(s.size(0), -1).sum(-1)
+
+        if self.reverse_mask:
+            x = torch.cat((x_id, x_change), dim=1)
+        else:
+            x = torch.cat((x_change, x_id), dim=1)
+
+        return x, log_det
+
+    def backward(self, z):
+
+        # Channel-wise mask
+        if self.reverse_mask:
+            z_id, z_change = z.chunk(2, dim=1)
+        else:
+            z_change, z_id = z.chunk(2, dim=1)
+
+        st = self.st_net(z_id)
+        s, t = st.chunk(2, dim=1)
+        s = torch.tanh(s)
+
+        inv_exp_s = s.mul(-1).exp()
+        if torch.isnan(inv_exp_s).any():
+            raise RuntimeError('Scale factor has NaN entries')
+        z_change = z_change * inv_exp_s - t
+
+        if self.reverse_mask:
+            x = torch.cat((z_id, z_change), dim=1)
+        else:
+            x = torch.cat((z_change, z_id), dim=1)
+
+        # Add log-determinant of the Jacobian
+        log_det = - s.view(s.size(0), -1).sum(-1)
+
+        return x, log_det
+
+
+class Rescale(nn.Module):
+    """Per-channel rescaling. Need a proper `nn.Module` so we can wrap it
+    with `torch.nn.utils.weight_norm`.
+
+    Args:
+        num_channels (int): Number of channels in the input.
+    """
+
+    def __init__(self, num_channels):
+        super(Rescale, self).__init__()
+        self.weight = nn.Parameter(torch.ones(num_channels, 1))
+
+    def forward(self, x):
+        x = self.weight * x
+        return x
 
 
 class Invertible1x1Conv(nn.Module):
@@ -204,3 +308,52 @@ class NormalizingFlowModel(nn.Module):
         z = prior.sample((num_samples,))
         xs, _ = self.flow.backward(z)
         return xs
+
+class RealNVP(nn.Module):
+
+    """ Based on the paper:
+    "Density estimation using Real NVP"
+    by Laurent Dinh, Jascha Sohl-Dickstein, and Samy Bengio
+    (https://arxiv.org/abs/1605.08803).
+    Args:
+        in_channels (int): Number of channels in the input.
+        mid_channels (int): Number of channels in the intermediate layers.
+        num_blocks (int): Number of residual blocks in the s and t network of
+            `Coupling` layers.
+    """
+    def __init__(self, in_features, mid_channels, num_blocks):
+        super(RealNVP, self).__init__()
+
+        self.in_couplings = nn.ModuleList([
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=False),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=True),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=False),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=True),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=False)
+        ])
+
+
+        self.out_couplings = nn.ModuleList([
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=False),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=True),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=False),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=True),
+            CouplingLayer(in_features, mid_channels, num_blocks, reverse_mask=False)
+            ])
+
+    def forward(self, x, reverse=False):
+        if reverse:
+            for coupling in reversed(self.out_couplings):
+                x, log_det_out = coupling(x, reverse)
+
+            for coupling in reversed(self.in_couplings):
+                x, log_det_in = coupling(x, reverse)
+        else:
+            for coupling in self.in_couplings:
+                x, log_det_in = coupling(x, reverse)
+
+            for coupling in self.out_couplings:
+                x, log_det_out = coupling(x, reverse)
+
+        return x, log_det_in + log_det_out
+
