@@ -167,7 +167,7 @@ for epoch in range(num_epochs):
 
             # Calculate NN-based prior
             mean = torch.mean(netw(digits), dim=0)
-            variance = torch.var(netw(digits), dim=0) * 100 # ToDo: add annealing here
+            variance = torch.var(netw(digits), dim=0) * 10 # ToDo: add annealing here
 
             prior = MultivariateNormal(mean, torch.diag(variance))
 
@@ -192,6 +192,16 @@ for epoch in range(num_epochs):
 
             # Visualize
             if batch_idx == 0:
+
+                print(minibatch[:10])
+
+                digits = minibatch[:10].unsqueeze(1).float().to(device)
+
+                # Calculate NN-based prior
+                mean = torch.mean(netw(digits), dim=0)
+                variance = torch.var(netw(digits), dim=0) * 10  # ToDo: add annealing here
+
+                prior = MultivariateNormal(mean, torch.diag(variance))
 
                 #mean = torch.zeros(dim)
                 variance = variance * 0.1
@@ -241,3 +251,5 @@ print("The training is compelete! \nVisualization results have been saved in the
 
                     plot_rdf(gt_f[0],mu[0],sigma[0],pi[0],numb_mix_densities,epoch)
                 """
+
+
