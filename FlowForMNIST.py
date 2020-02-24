@@ -7,7 +7,13 @@ import torch.optim as optim
 from torch.distributions import MultivariateNormal
 from torchvision import datasets, transforms
 
-from Flows import AffineConstantFlow, SlowMAF, NormalizingFlowModel, ActNorm, CouplingLayer
+from Flows import (
+    AffineConstantFlow,
+    SlowMAF,
+    NormalizingFlowModel,
+    ActNorm,
+    CouplingLayer,
+)
 
 from Flows import CondPrior as my_prior
 
@@ -17,7 +23,6 @@ batch_size = 512
 
 SEED = 2334
 torch.manual_seed(SEED)
-
 
 
 def plot_samples(ground_truth, produced_images, epoch):
@@ -38,25 +43,25 @@ def plot_samples(ground_truth, produced_images, epoch):
     fig = plt.figure()
     # Make two raws with three image in each
     ax1 = fig.add_subplot(2, 3, 1)
-    ax1.imshow(ground_truth[0][0], cmap='gray')
-    plt.title('Original')
+    ax1.imshow(ground_truth[0][0], cmap="gray")
+    plt.title("Original")
     ax2 = fig.add_subplot(2, 3, 2)
-    ax2.imshow(ground_truth[1][0], cmap='gray')
-    plt.title('Original')
+    ax2.imshow(ground_truth[1][0], cmap="gray")
+    plt.title("Original")
     ax3 = fig.add_subplot(2, 3, 3)
-    ax3.imshow(ground_truth[2][0], cmap='gray')
-    plt.title('Original')
+    ax3.imshow(ground_truth[2][0], cmap="gray")
+    plt.title("Original")
     ax4 = fig.add_subplot(2, 3, 4)
-    ax4.imshow(produced_images[0].reshape((28,28)), cmap='gray')
-    plt.title('Sampled')
+    ax4.imshow(produced_images[0].reshape((28, 28)), cmap="gray")
+    plt.title("Sampled")
     ax5 = fig.add_subplot(2, 3, 5)
-    ax5.imshow(produced_images[1].reshape((28, 28)), cmap='gray')
-    plt.title('Sampled')
+    ax5.imshow(produced_images[1].reshape((28, 28)), cmap="gray")
+    plt.title("Sampled")
     ax6 = fig.add_subplot(2, 3, 6)
-    ax6.imshow(produced_images[2].reshape((28, 28)), cmap='gray')
-    plt.title('Sampled')
+    ax6.imshow(produced_images[2].reshape((28, 28)), cmap="gray")
+    plt.title("Sampled")
 
-    plt.savefig('figures/Results_{}epoch.png'.format(epoch))
+    plt.savefig("figures/Results_{}epoch.png".format(epoch))
 
     plt.close()
 
@@ -77,34 +82,32 @@ def plot_rdf(ground_truth, means, variances, epoch):
 
     """
 
-
-    fig = plt.figure()
-
     num_mix = 1
 
     # Plot reference digit
-    fig, ax = plt.subplots(3, num_mix,)
+    fig, ax = plt.subplots(3, num_mix, )
 
     # Plot all the parameters for each component of GMM
     for comp in range(num_mix):
-
-        ax[0, comp].imshow(ground_truth[0], cmap='gray', extent=(-56, 56, -56, 56))
-        ax[0, comp].set_title('Original')
-
-        # mean
-        ax[1, comp].imshow(means[comp].reshape((28,28)), cmap='gray', extent=(-56, 56, -56, 56))
-        ax[1, comp].set_title('Mean')
+        ax[0, comp].imshow(ground_truth[0], cmap="gray", extent=(-56, 56, -56, 56))
+        ax[0, comp].set_title("Original")
 
         # mean
-        ax[2, comp].imshow(variances[comp].reshape((28,28)), cmap='gray', extent=(-56, 56, -56, 56))
-        ax[2, comp].set_title('Variance')
+        ax[1, comp].imshow(
+            means[comp].reshape((28, 28)), cmap="gray", extent=(-56, 56, -56, 56)
+        )
+        ax[1, comp].set_title("Mean")
 
+        # mean
+        ax[2, comp].imshow(
+            variances[comp].reshape((28, 28)), cmap="gray", extent=(-56, 56, -56, 56)
+        )
+        ax[2, comp].set_title("Variance")
 
-    plt.savefig('figures/pdf_{}epoch.png'.format(epoch))
+    plt.savefig("figures/pdf_{}epoch.png".format(epoch))
 
 
 def conditioning(input, netw):
-
     conditioning = netw(input)
     means, log_sigma = conditioning.chunk(2, dim=1)
 
@@ -117,28 +120,38 @@ def conditioning(input, netw):
 
 # get the dataset
 train_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=True, download=True,
-                           transform=transforms.Compose([
-                               transforms.ToTensor(),
-                               transforms.Normalize((0.1307,), (0.3081,))
-                           ])),
-            batch_size=batch_size, shuffle=True)
+    datasets.MNIST(
+        "data",
+        train=True,
+        download=True,
+        transform=transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        ),
+    ),
+    batch_size=batch_size,
+    shuffle=True,
+)
 
 test_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('data', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
-            ])),
-            batch_size=batch_size, shuffle=True)
+    datasets.MNIST(
+        "data",
+        train=False,
+        transform=transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+        ),
+    ),
+    batch_size=batch_size,
+    shuffle=True,
+)
 
 ##########################   FLOW itself   ##############################
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-netw = MLP(1, 784*2, 512)
+netw = MLP(1, 784 * 2, 512)
 
-aff_flow = [AffineConstantFlow(dim=784) for i in range(3)]
-coupling_flow = [CouplingLayer(784, 256, i%2==1) for i in range(3)]
+aff_flow = [AffineConstantFlow(dim=784) for i in range(5)]
+coupling_flow = [CouplingLayer(784, 256, i % 2 == 1) for i in range(6)]
 maf_flow = [SlowMAF(dim=784, parity=True) for _ in aff_flow]
 norms = [ActNorm(dim=784) for _ in coupling_flow]
 flows = list(itertools.chain(*zip(aff_flow, maf_flow, coupling_flow, norms)))
@@ -159,88 +172,93 @@ dim = 784
 
 losses = []
 
-
-
 # train the model
 for epoch in range(num_epochs):
 
-        for batch_idx, (labels, minibatch) in enumerate(train_loader):
+    for batch_idx, (labels, minibatch) in enumerate(train_loader):
 
-            # Take care of the full batches
-            if labels.shape[0] < batch_size:
-                continue
+        # Take care of the full batches
+        if labels.shape[0] < batch_size:
+            continue
 
-            gt = labels[0:3]
+        gt = labels[0:3]
 
-            labels = labels.reshape(batch_size, 784).to(device)
-            digits = minibatch.unsqueeze(1).float().to(device)
+        labels = labels.reshape(batch_size, 784).to(device)
+        digits = minibatch.unsqueeze(1).float().to(device)
 
-            model.zero_grad()
+        model.zero_grad()
 
-            # Calculate NN-based prior
-            means, variances = conditioning(digits, netw)
-            prior = my_prior(means, variances)
+        # Calculate NN-based prior
+        means, variances = conditioning(digits, netw)
+        prior = my_prior(means, variances)
 
-            prior.log_prob(labels)
+        prior.log_prob(labels)
 
-            #prior = MultivariateNormal(mean, torch.diag(variance))
+        # prior = MultivariateNormal(mean, torch.diag(variance))
 
-            """mean = torch.zeros(dim)
+        """mean = torch.zeros(dim)
             variance = torch.eye(dim)
             prior = MultivariateNormal(mean, variance)"""
 
-            zs, prior_logprob, log_det = model.forward(labels, prior)
-            logprob = prior_logprob + log_det
-            loss = -torch.sum(logprob)  # NLL
+        zs, prior_logprob, log_det = model.forward(labels, prior)
+        logprob = prior_logprob + log_det
+        loss = -torch.sum(logprob)  # NLL
 
-            model.zero_grad()
-            loss.backward()
-            optimizer.step()
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-            print('Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-            epoch, batch_idx * len(minibatch), len(train_loader.dataset),
-                   100. * batch_idx / len(train_loader), loss.item()))
+        print(
+            "Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+                epoch,
+                batch_idx * len(minibatch),
+                len(train_loader.dataset),
+                100.0 * batch_idx / len(train_loader),
+                loss.item(),
+            )
+        )
 
+        losses.append(loss.item())
 
-            losses.append(loss.item())
+        # Visualize
+        if batch_idx == 0:
+            digits = minibatch[:10].unsqueeze(1).float().to(device)
 
-            # Visualize
-            if batch_idx == 0:
+            # Calculate NN-based prior
+            means, variances = conditioning(digits, netw)
+            variances = variances * 0.1
+            prior = my_prior(means, variances)
+            # prior = MultivariateNormal(mean, torch.diag(variance))
 
-                print(minibatch[:10])
+            x = labels[:10]
 
-                digits = minibatch[:10].unsqueeze(1).float().to(device)
+            zs, prior_logprob, log_det = model(x, prior)
+            z = zs[-1]
 
-                # Calculate NN-based prior
-                # Calculate NN-based prior
-                means, variances = conditioning(digits, netw)
-                prior = my_prior(means, variances)
-                #prior = MultivariateNormal(mean, torch.diag(variance))
+            reconstr, inv_log_det = model.backward(z)
 
-                #variance = variance * 0.1
-                #prior = MultivariateNormal(mean, torch.diag(variance))
+            r = reconstr[-1].detach().numpy()
 
-                x = labels[:10]
+            det = log_det + inv_log_det
+            print("Det check: ", det.sum())
 
-                zs, prior_logprob, log_det = model(x, prior)
-                z = zs[-1]
+            # plot_samples(gt, r[:3], epoch)
 
-                reconstr, inv_log_det = model.backward(z)
+            zs = model.sample(128, prior)
+            z = zs[-1]
+            images = z.detach().numpy()
 
-                r = reconstr[-1].detach().numpy()
+            plot_samples(gt, images[:3], epoch)
 
-                det = log_det + inv_log_det
-                print("Det check: ", det.sum())
+            print(
+                "Variance is in range [",
+                variances.min().detach().numpy(),
+                ":",
+                variances.max().detach().numpy(),
+                "]",
+            )
 
-                #plot_samples(gt, r[:3], epoch)
-
-                zs = model.sample(128, prior)
-                z = zs[-1]
-                images = z.detach().numpy()
-
-                plot_samples(gt, images[:3], epoch)
-
-                """# PLOT PDF
+            """# PLOT PDF
 
                 mu, _,_ = model(mean.unsqueeze(0), prior)
                 mu = mu[-1].detach().numpy()
@@ -255,8 +273,9 @@ plt.plot(losses)
 
 plt.show()
 
-
-print("The training is compelete! \nVisualization results have been saved in the folder 'figures'")
+print(
+    "The training is compelete! \nVisualization results have been saved in the folder 'figures'"
+)
 
 """if plot_pdf:
                     mu = pca.inverse_transform(mu.detach().numpy())
@@ -264,5 +283,3 @@ print("The training is compelete! \nVisualization results have been saved in the
 
                     plot_rdf(gt_f[0],mu[0],sigma[0],pi[0],numb_mix_densities,epoch)
                 """
-
-

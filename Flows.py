@@ -8,6 +8,7 @@ import math
 
 from torch.distributions import MultivariateNormal
 
+
 class VanillaFlow(nn.Module):
     """
     Using Neural Networks as is for constructing the Flow
@@ -21,7 +22,6 @@ class VanillaFlow(nn.Module):
         self.activation = MyLeakyReLU(dim)
 
     def forward(self, x):
-
         tria_matrix = torch.triu(self.matrix)
 
         z = self.activation.forward(F.linear(x, tria_matrix) + self.bias)
@@ -31,7 +31,6 @@ class VanillaFlow(nn.Module):
         return z, log_det
 
     def backward(self, z):
-
         tria_matrix = torch.triu(self.matrix)
 
         z_min_bias = torch.transpose(self.activation.backward(z) - self.bias, 0, 1)
@@ -67,7 +66,6 @@ class AffineConstantFlow(nn.Module):
         x = (z - t) * torch.exp(-s)
         log_det = torch.sum(-s, dim=1)
         return x, log_det
-
 
 
 class CouplingLayer(nn.Module):
@@ -291,7 +289,6 @@ class NormalizingFlow(nn.Module):
 
 
 class CondPrior(nn.Module):
-
     """ A conditioned prior which is defined by a different mean and variance for each example in a batch """
 
     def __init__(self, means, variances):
@@ -319,12 +316,11 @@ class CondPrior(nn.Module):
         return log_gauss
 
     def sample(self, number_of_samples):
-
         N = number_of_samples[0]
 
         sampl_sz = min(self.batch_size, N)
 
-        epsilon = torch.randn((sampl_sz,self.dim))
+        epsilon = torch.randn((sampl_sz, self.dim))
         curr_means = self.means[:sampl_sz]
         curr_sigma = self.variances[:sampl_sz]
 
@@ -339,16 +335,17 @@ class CondPrior(nn.Module):
 
         return sample
 
+
 class NormalizingFlowModel(nn.Module):
     """ A Normalizing Flow Model is a (prior, flow) pair """
 
-    def __init__(self,flows):
+    def __init__(self, flows):
         super().__init__()
         self.flow = NormalizingFlow(flows)
 
     def forward(self, x, prior):
         zs, log_det = self.flow.forward(x)
-        prior_logprob = prior.log_prob(zs[-1]) #.view(x.size(0), -1).sum(1)
+        prior_logprob = prior.log_prob(zs[-1])  # .view(x.size(0), -1).sum(1)
         return zs, prior_logprob, log_det
 
     def backward(self, z):

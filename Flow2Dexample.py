@@ -60,9 +60,6 @@ maf_flow = [SlowMAF(dim=2, parity=True) for _ in aff_flow]
 norms = [ActNorm(dim=2) for _ in coupling_flow]
 flows = list(itertools.chain(*zip(aff_flow, maf_flow, coupling_flow, norms)))
 
-# new_flow = [RealNVP(2,2,20,8) for i in range(2)]
-
-
 # construct the model
 model = NormalizingFlowModel(flows)
 
@@ -71,15 +68,10 @@ optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo t
 print("number of params: ", sum(p.numel() for p in model.parameters()))
 
 # Calculate NN-based prior
-mean = torch.zeros(BATCH_SZ,2)
-variance = torch.ones(BATCH_SZ,2)
-#diag_var = torch.diag(variance)
+mean = torch.zeros(BATCH_SZ, 2)
+variance = torch.ones(BATCH_SZ, 2)
 
-#mean = torch.unsqueeze(mean, 0).expand([BATCH_SZ,2])
-#var = torch.unsqueeze(diag_var, 0).expand([BATCH_SZ,2, 2])
-
-prior = MultivariateNormal(torch.zeros(2), torch.diag(torch.ones(2)))
-
+# prior = MultivariateNormal(torch.zeros(2), torch.diag(torch.ones(2)))
 prior = my_prior(mean, variance)
 
 model.train()
@@ -97,10 +89,7 @@ for k in range(10000):
     optimizer.step()
 
     if k % 500 == 0:
-
         print(k, ": ", loss.item())
-
-        #print("Log det :", torch.sum(log_det), "  Prior: ", prior_logprob)
 
         model.eval()
 
