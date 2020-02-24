@@ -148,13 +148,13 @@ test_loader = torch.utils.data.DataLoader(
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-netw = MLP(1, 784 * 2, 512)
+netw = MLP(1, 784 * 2, 512).to(device)
 
 aff_flow = [AffineConstantFlow(dim=784) for i in range(5)]
-coupling_flow = [CouplingLayer(784, 256, i % 2 == 1) for i in range(6)]
+coupling_flow = [CouplingLayer(784, 256, i % 2 == 1) for i in range(5)]
 maf_flow = [SlowMAF(dim=784, parity=True) for _ in aff_flow]
 norms = [ActNorm(dim=784) for _ in coupling_flow]
-flows = list(itertools.chain(*zip(aff_flow, maf_flow, coupling_flow, norms)))
+flows = list(itertools.chain(*zip(aff_flow, coupling_flow)))
 
 # construct the model
 model = NormalizingFlowModel(flows).to(device)
@@ -190,7 +190,7 @@ for epoch in range(num_epochs):
 
         # Calculate NN-based prior
         means, variances = conditioning(digits, netw)
-        prior = my_prior(means, variances)
+        prior = my_prior(means, variances, device)
 
         prior.log_prob(labels)
 
@@ -227,7 +227,7 @@ for epoch in range(num_epochs):
             # Calculate NN-based prior
             means, variances = conditioning(digits, netw)
             variances = variances * 0.1
-            prior = my_prior(means, variances)
+            prior = my_prior(means, variances, device)
             # prior = MultivariateNormal(mean, torch.diag(variance))
 
             x = labels[:10]
@@ -237,7 +237,7 @@ for epoch in range(num_epochs):
 
             reconstr, inv_log_det = model.backward(z)
 
-            r = reconstr[-1].detach().numpy()
+            #r = reconstr[-1].detach().numpy()
 
             det = log_det + inv_log_det
             print("Det check: ", det.sum())
@@ -246,15 +246,15 @@ for epoch in range(num_epochs):
 
             zs = model.sample(128, prior)
             z = zs[-1]
-            images = z.detach().numpy()
+            images = z.cpu().detach().numpy()
 
             plot_samples(gt, images[:3], epoch)
 
             print(
                 "Variance is in range [",
-                variances.min().detach().numpy(),
+                variances.min().cpu().detach().numpy(),
                 ":",
-                variances.max().detach().numpy(),
+                variances.max().cpu().detach().numpy(),
                 "]",
             )
 

@@ -100,10 +100,11 @@ class CouplingLayer(nn.Module):
         else:
             x_change, x_id = x.chunk(2, dim=1)
 
+        #import pdb; pdb.set_trace()
+
         st = self.st_net(x_id)
         s, t = st.chunk(2, dim=1)
         s = torch.tanh(s)
-
         # ToDo: fix rescale
         # s = self.rescale(torch.tanh(s))
 
@@ -269,7 +270,7 @@ class NormalizingFlow(nn.Module):
 
     def forward(self, x):
         m, _ = x.shape
-        log_det = torch.zeros(m)
+        log_det = torch.zeros(m).to(x.get_device())
         zs = [x]
         for flow in self.flows:
             x, ld = flow.forward(x)
@@ -279,7 +280,7 @@ class NormalizingFlow(nn.Module):
 
     def backward(self, z):
         m, _ = z.shape
-        log_det = torch.zeros(m)
+        log_det = torch.zeros(m).to(z.get_device())
         xs = [z]
         for flow in self.flows[::-1]:
             z, ld = flow.backward(z)
@@ -291,11 +292,12 @@ class NormalizingFlow(nn.Module):
 class CondPrior(nn.Module):
     """ A conditioned prior which is defined by a different mean and variance for each example in a batch """
 
-    def __init__(self, means, variances):
+    def __init__(self, means, variances, device):
         super().__init__()
-        self.means = means
-        self.variances = variances
+        self.means = means.to(device)
+        self.variances = variances.to(device)
         self.batch_size, self.dim = means.shape
+        self.device = device
 
     def log_prob(self, x):
         """Returns the log-probability of `data` given  parameters `sigma` and `mu`
@@ -320,7 +322,7 @@ class CondPrior(nn.Module):
 
         sampl_sz = min(self.batch_size, N)
 
-        epsilon = torch.randn((sampl_sz, self.dim))
+        epsilon = torch.randn((sampl_sz, self.dim)).to(self.device)
         curr_means = self.means[:sampl_sz]
         curr_sigma = self.variances[:sampl_sz]
 
