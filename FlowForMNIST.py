@@ -9,6 +9,8 @@ from torchvision import datasets, transforms
 
 from Flows import AffineConstantFlow, SlowMAF, NormalizingFlowModel, ActNorm, CouplingLayer
 
+from Flows import CondPrior as my_prior
+
 from Nets import MLP
 
 batch_size = 512
@@ -101,6 +103,16 @@ def plot_rdf(ground_truth, means, variances, epoch):
     plt.savefig('figures/pdf_{}epoch.png'.format(epoch))
 
 
+def conditioning(input, netw):
+
+    conditioning = netw(input)
+    means, log_sigma = conditioning.chunk(2, dim=1)
+
+    sigma = torch.exp(log_sigma) + 1e-10
+
+    return means, sigma
+
+
 ##########################         DATASETS    ##############################
 
 # get the dataset
@@ -123,7 +135,7 @@ test_loader = torch.utils.data.DataLoader(
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-netw = MLP(1, 784, 256)
+netw = MLP(1, 784*2, 512)
 
 aff_flow = [AffineConstantFlow(dim=784) for i in range(3)]
 coupling_flow = [CouplingLayer(784, 256, i%2==1) for i in range(3)]
@@ -166,10 +178,12 @@ for epoch in range(num_epochs):
             model.zero_grad()
 
             # Calculate NN-based prior
-            mean = torch.mean(netw(digits), dim=0)
-            variance = torch.var(netw(digits), dim=0) * 10 # ToDo: add annealing here
+            means, variances = conditioning(digits, netw)
+            prior = my_prior(means, variances)
 
-            prior = MultivariateNormal(mean, torch.diag(variance))
+            prior.log_prob(labels)
+
+            #prior = MultivariateNormal(mean, torch.diag(variance))
 
             """mean = torch.zeros(dim)
             variance = torch.eye(dim)
@@ -198,14 +212,13 @@ for epoch in range(num_epochs):
                 digits = minibatch[:10].unsqueeze(1).float().to(device)
 
                 # Calculate NN-based prior
-                mean = torch.mean(netw(digits), dim=0)
-                variance = torch.var(netw(digits), dim=0) * 10  # ToDo: add annealing here
+                # Calculate NN-based prior
+                means, variances = conditioning(digits, netw)
+                prior = my_prior(means, variances)
+                #prior = MultivariateNormal(mean, torch.diag(variance))
 
-                prior = MultivariateNormal(mean, torch.diag(variance))
-
-                #mean = torch.zeros(dim)
-                variance = variance * 0.1
-                prior = MultivariateNormal(mean, torch.diag(variance))
+                #variance = variance * 0.1
+                #prior = MultivariateNormal(mean, torch.diag(variance))
 
                 x = labels[:10]
 

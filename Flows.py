@@ -4,7 +4,9 @@ from torch import nn
 
 from Nets import LeafParam, MLP
 from Tools import MyLeakyReLU
+import math
 
+from torch.distributions import MultivariateNormal
 
 class VanillaFlow(nn.Module):
     """
@@ -288,6 +290,55 @@ class NormalizingFlow(nn.Module):
         return xs, log_det
 
 
+class CondPrior(nn.Module):
+
+    """ A conditioned prior which is defined by a different mean and variance for each example in a batch """
+
+    def __init__(self, means, variances):
+        super().__init__()
+        self.means = means
+        self.variances = variances
+        self.batch_size, self.dim = means.shape
+
+    def log_prob(self, x):
+        """Returns the log-probability of `data` given  parameters `sigma` and `mu`
+        """
+
+        target = x.float()
+
+        out_shape = self.variances.shape[-1]
+        const = .5 * out_shape * math.log(2 * math.pi)
+
+        log_gauss = - const - torch.sum(((target - self.means) / self.variances) ** 2 / 2
+                                        + torch.log(self.variances), [1])
+
+        """ alt_prior = MultivariateNormal(torch.zeros(2), torch.diag(torch.ones(2)))
+
+        log_gauss = alt_prior.log_prob(x).view(x.size(0), -1).sum(1)"""
+
+        return log_gauss
+
+    def sample(self, number_of_samples):
+
+        N = number_of_samples[0]
+
+        sampl_sz = min(self.batch_size, N)
+
+        epsilon = torch.randn((sampl_sz,self.dim))
+        curr_means = self.means[:sampl_sz]
+        curr_sigma = self.variances[:sampl_sz]
+
+        sample = curr_means + curr_sigma * epsilon
+
+        """ 
+        alt_prior = MultivariateNormal(torch.zeros(2), torch.diag(torch.ones(2)))
+
+        sample = alt_prior.sample((N,))
+
+        """
+
+        return sample
+
 class NormalizingFlowModel(nn.Module):
     """ A Normalizing Flow Model is a (prior, flow) pair """
 
@@ -297,7 +348,7 @@ class NormalizingFlowModel(nn.Module):
 
     def forward(self, x, prior):
         zs, log_det = self.flow.forward(x)
-        prior_logprob = prior.log_prob(zs[-1]).view(x.size(0), -1).sum(1)
+        prior_logprob = prior.log_prob(zs[-1]) #.view(x.size(0), -1).sum(1)
         return zs, prior_logprob, log_det
 
     def backward(self, z):
