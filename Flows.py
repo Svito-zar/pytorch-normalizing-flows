@@ -264,13 +264,14 @@ class ActNorm(AffineConstantFlow):
 class NormalizingFlow(nn.Module):
     """ A sequence of Normalizing Flows is a Normalizing Flow """
 
-    def __init__(self, flows):
+    def __init__(self, flows, device):
         super().__init__()
         self.flows = nn.ModuleList(flows)
+        self.device =device
 
     def forward(self, x):
         m, _ = x.shape
-        log_det = torch.zeros(m).to(x.get_device())
+        log_det = torch.zeros(m).to(self.device)
         zs = [x]
         for flow in self.flows:
             x, ld = flow.forward(x)
@@ -280,7 +281,7 @@ class NormalizingFlow(nn.Module):
 
     def backward(self, z):
         m, _ = z.shape
-        log_det = torch.zeros(m).to(z.get_device())
+        log_det = torch.zeros(m).to(self.device)
         xs = [z]
         for flow in self.flows[::-1]:
             z, ld = flow.backward(z)
@@ -341,9 +342,9 @@ class CondPrior(nn.Module):
 class NormalizingFlowModel(nn.Module):
     """ A Normalizing Flow Model is a (prior, flow) pair """
 
-    def __init__(self, flows):
+    def __init__(self, flows, device):
         super().__init__()
-        self.flow = NormalizingFlow(flows)
+        self.flow = NormalizingFlow(flows, device)
 
     def forward(self, x, prior):
         zs, log_det = self.flow.forward(x)

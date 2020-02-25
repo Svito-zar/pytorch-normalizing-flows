@@ -157,7 +157,7 @@ norms = [ActNorm(dim=784) for _ in coupling_flow]
 flows = list(itertools.chain(*zip(aff_flow, coupling_flow)))
 
 # construct the model
-model = NormalizingFlowModel(flows).to(device)
+model = NormalizingFlowModel(flows, device).to(device)
 
 # optimizer
 optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo tune WD
