@@ -15,10 +15,9 @@ from Flows import CondPrior as my_prior
 
 BATCH_SZ = 128
 
-
-
 SEED = 2334
 torch.manual_seed(SEED)
+
 
 ##########################         DATASETS    ##############################
 
@@ -35,8 +34,10 @@ class DatasetMixture:
                   np.random.randn(n // 4, 2) * 0.5 + np.array([-10, 5])]
         return torch.from_numpy(r.astype(np.float32))
 
+
 class DatasetMoons:
     """ two half-moons """
+
     def sample(self, n):
         moons = datasets.make_moons(n_samples=n, noise=0.05)[0].astype(np.float32)
         return torch.from_numpy(moons)
@@ -48,30 +49,25 @@ x = d.sample(BATCH_SZ)
 plt.figure(figsize=(4, 4))
 plt.scatter(x[:, 0], x[:, 1], s=5, alpha=0.5)
 plt.axis('equal');
-#plt.show()
+# plt.show()
 
 ##########################   FLOW itself   ##############################
-netw = MLP(2,2,2)
-
-aff_flow = [AffineConstantFlow(dim=2) for i in range(3)]
-coupling_flow = [CouplingLayer(2, 5, i%2==1) for i in range(3)]
-maf_flow = [SlowMAF(dim=2, parity=True) for _ in aff_flow]
-norms = [ActNorm(dim=2) for _ in coupling_flow]
-flows = list(itertools.chain(*zip(aff_flow, maf_flow, coupling_flow, norms)))
-
-#Resut flows
+netw = MLP(2, 2, 2)
 
 aff_flow = [AffineConstantFlow(dim=2) for i in range(5)]
-coupling_flow = [CouplingLayer(2, 5, i%2==1) for i in range(5)]
+coupling_flow = [CouplingLayer(2, 5, i % 2 == 1) for i in range(5)]
 maf_flow = [SlowMAF(dim=2, parity=True) for _ in aff_flow]
 norms = [ActNorm(dim=2) for _ in coupling_flow]
 flows = list(itertools.chain(*zip(aff_flow, coupling_flow, norms)))
 
-#new_flow = [RealNVP(2,2,20,8) for i in range(2)]
-
-
 # construct the model
-model = NormalizingFlowModel(flows)
+model = NormalizingFlowModel(flows, "cpu")
+
+# Calculate prior
+mean = torch.zeros(BATCH_SZ, 2)
+variance = torch.ones(BATCH_SZ, 2)
+#prior = MultivariateNormal(mean, torch.diag(variance))
+prior = my_prior(mean, variance, "cpu")
 
 # optimizer
 optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo tune WD
@@ -82,13 +78,6 @@ for k in range(20000):
 
     x = d.sample(BATCH_SZ)
 
-    # Calculate NN-based prior
-    mean = torch.zeros(BATCH_SZ, 2)
-    variance = torch.ones(2)
-    sigma = torch.diag(variance)
-    prior = MultivariateNormal(mean, torch.diag(variance))
-    #prior = my_prior(mean, torch.diag(variance))
-
     zs, prior_logprob, log_det = model.forward(x, prior)
     logprob = prior_logprob + log_det
     loss = -torch.sum(logprob)  # NLL
@@ -98,17 +87,11 @@ for k in range(20000):
     optimizer.step()
 
     if k % 5000 == 0:
-
-        print(k,": ", loss.item())
+        print(k, ": ", loss.item())
 
         model.eval()
 
-        x = d.sample(128)
-
-        #mean = torch.mean(netw(x), dim=0)
-        #variance = torch.var(netw(x), dim=0)
-        #prior = MultivariateNormal(mean, torch.diag(variance))
-        #prior = my_prior(mean, torch.diag(variance))
+        x = d.sample(BATCH_SZ)
 
         zs, prior_logprob, log_det = model(x, prior)
         z = zs[-1]
@@ -118,7 +101,7 @@ for k in range(20000):
 
         x_np = x.detach().numpy()
         z = z.detach().numpy()
-        #p = prior.sample(128).squeeze().detach().numpy()
+        # p = prior.sample(128).squeeze().detach().numpy()
         p = prior.sample([128]).squeeze()
         plt.figure(figsize=(10, 5))
         plt.subplot(121)
@@ -128,8 +111,7 @@ for k in range(20000):
         plt.axis('scaled')
         plt.title('x -> z')
 
-
-        x = d.sample(128)
+        x = d.sample(BATCH_SZ)
 
         zs, prior_logprob, log_det = model(x, prior)
         z = zs[-1]
@@ -164,9 +146,6 @@ for k in range(20000):
 
         """
 
-
-        
-
         zs = model.sample(128 * 8, prior)
         z = zs[-1]
         z = z.detach().numpy()
@@ -180,11 +159,6 @@ for k in range(20000):
         plt.axis('scaled')
         plt.title('z -> x')
         plt.show()
-        
-
-
-
-
 
 """
 

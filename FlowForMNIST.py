@@ -150,17 +150,17 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 netw = MLP(1, 784 * 2, 512).to(device)
 
-aff_flow = [AffineConstantFlow(dim=784) for i in range(5)]
-coupling_flow = [CouplingLayer(784, 256, i % 2 == 1) for i in range(5)]
+aff_flow = [AffineConstantFlow(dim=784) for i in range(7)]
+coupling_flow = [CouplingLayer(784, 256, i % 2 == 1) for i in range(7)]
 maf_flow = [SlowMAF(dim=784, parity=True) for _ in aff_flow]
 norms = [ActNorm(dim=784) for _ in coupling_flow]
-flows = list(itertools.chain(*zip(aff_flow, coupling_flow)))
+flows = list(itertools.chain(*zip(coupling_flow, norms)))
 
 # construct the model
 model = NormalizingFlowModel(flows, device).to(device)
 
 # optimizer
-optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo tune WD
+optimizer = optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-8)  # todo tune WD
 print("number of params: ", sum(p.numel() for p in model.parameters()))
 
 model.train()
@@ -218,7 +218,8 @@ for epoch in range(num_epochs):
             )
         )
 
-        losses.append(loss.item())
+        if epoch>0:
+            losses.append(loss.item())
 
         # Visualize
         if batch_idx == 0:

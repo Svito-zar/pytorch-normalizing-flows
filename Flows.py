@@ -56,6 +56,13 @@ class AffineConstantFlow(nn.Module):
     def forward(self, x):
         s = self.s if self.s is not None else x.new_zeros(x.size())
         t = self.t if self.t is not None else x.new_zeros(x.size())
+
+        if torch.isnan(s).any():
+            raise RuntimeError('Scale factor "s" has NaN entries')
+
+        if torch.isnan(t).any():
+            raise RuntimeError('Additive factor "t" has NaN entries')
+
         z = x * torch.exp(s) + t
         log_det = torch.sum(s, dim=1)
         return z, log_det
@@ -66,6 +73,30 @@ class AffineConstantFlow(nn.Module):
         x = (z - t) * torch.exp(-s)
         log_det = torch.sum(-s, dim=1)
         return x, log_det
+
+
+
+
+class ActNorm(AffineConstantFlow):
+    """
+    Really an AffineConstantFlow but with a data-dependent initialization,
+    where on the very first batch we clever initialize the s,t so that the output
+    is unit gaussian. As described in Glow paper.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.data_dep_init_done = False
+
+    def forward(self, x):
+        # first batch is used for init
+        if not self.data_dep_init_done:
+            espilon = torch.exp(torch.tensor(-30).float())
+            assert self.s is not None and self.t is not None  # for now
+            self.s.data = (-torch.log(x.std(dim=0, keepdim=True) + espilon)).detach()
+            self.t.data = (-(x * torch.exp(self.s)).mean(dim=0, keepdim=True)).detach()
+            self.data_dep_init_done = True
+        return super().forward(x)
 
 
 class CouplingLayer(nn.Module):
@@ -89,9 +120,6 @@ class CouplingLayer(nn.Module):
 
         self.st_net = MLP(in_features, in_features * 2, mid_channels)
 
-        # Learnable scale for s
-        self.rescale = nn.utils.weight_norm(Rescale(in_features))
-
     def forward(self, x):
 
         # Channel-wise mask
@@ -105,8 +133,6 @@ class CouplingLayer(nn.Module):
         st = self.st_net(x_id)
         s, t = st.chunk(2, dim=1)
         s = torch.tanh(s)
-        # ToDo: fix rescale
-        # s = self.rescale(torch.tanh(s))
 
         # Scale and translate
         exp_s = s.exp()
@@ -239,26 +265,6 @@ class SlowMAF(nn.Module):
             log_det += -s
         return x, log_det
 
-
-class ActNorm(AffineConstantFlow):
-    """
-    Really an AffineConstantFlow but with a data-dependent initialization,
-    where on the very first batch we clever initialize the s,t so that the output
-    is unit gaussian. As described in Glow paper.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.data_dep_init_done = False
-
-    def forward(self, x):
-        # first batch is used for init
-        if not self.data_dep_init_done:
-            assert self.s is not None and self.t is not None  # for now
-            self.s.data = (-torch.log(x.std(dim=0, keepdim=True))).detach()
-            self.t.data = (-(x * torch.exp(self.s)).mean(dim=0, keepdim=True)).detach()
-            self.data_dep_init_done = True
-        return super().forward(x)
 
 
 class NormalizingFlow(nn.Module):
