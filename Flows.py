@@ -91,7 +91,7 @@ class ActNorm(AffineConstantFlow):
     def forward(self, x):
         # first batch is used for init
         if not self.data_dep_init_done:
-            espilon = torch.exp(torch.tensor(-10).double())
+            espilon = torch.exp(torch.tensor(-1).double())
             assert self.s is not None and self.t is not None  # for now
             self.s.data = (-torch.log(x.std(dim=0, keepdim=True) + espilon)).detach()
             self.t.data = (-(x * torch.exp(self.s)).mean(dim=0, keepdim=True)).detach()

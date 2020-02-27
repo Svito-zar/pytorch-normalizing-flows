@@ -23,7 +23,7 @@ from Flows import CondPrior as my_prior
 from Nets import MLP
 
 batch_size = 512
-num_epochs = 10
+num_epochs = 15
 dim = 64
 
 SEED = 2334
@@ -100,13 +100,13 @@ def plot_rdf(ground_truth, means, variances, epoch):
 
         # mean
         ax[1, comp].imshow(
-            means[comp].reshape((28, 28)), cmap="gray", extent=(-56, 56, -56, 56)
+            means[comp].reshape((8, 8)), cmap="gray", extent=(-56, 56, -56, 56)
         )
         ax[1, comp].set_title("Mean")
 
         # mean
         ax[2, comp].imshow(
-            variances[comp].reshape((28, 28)), cmap="gray", extent=(-56, 56, -56, 56)
+            variances[comp].reshape((8, 8)), cmap="gray", extent=(-56, 56, -56, 56)
         )
         ax[2, comp].set_title("Variance")
 
@@ -180,15 +180,15 @@ test_loader = torch.utils.data.DataLoader(
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-netw = MLP(1, dim * 2, 64).to(device)
+netw = MLP(10, dim * 2, 256).to(device)
 
-N = 12
+N = 10
 
-aff_flow = [AffineConstantFlow(dim=dim) for i in range(N)]
-coupling_flow = [CouplingLayer(dim, 64, i % 2 == 1) for i in range(N-6)]
-maf_flow = [SlowMAF(dim=dim, parity=True) for i in range(1)]
-norms = [ActNorm(dim=dim) for _ in coupling_flow]
-flows = list(itertools.chain(*zip(aff_flow, norms, coupling_flow, maf_flow )))
+aff_flow = [AffineConstantFlow(dim=dim, scale=False, shift=False) for i in range(N)]
+coupling_flow = [CouplingLayer(dim, 64, i % 2 == 1) for i in range(N-2)]
+maf_flow = [SlowMAF(dim=dim, parity=True) for i in range(N-5)]
+norms = [ActNorm(dim=dim) for _ in maf_flow]
+flows = list(itertools.chain(*zip(aff_flow, coupling_flow, maf_flow)))
 
 # construct the model
 model = NormalizingFlowModel(flows, device).to(device)
@@ -199,7 +199,8 @@ model = NormalizingFlowModel(flows, device).to(device)
 #prior = my_prior(mean, variance, "cpu")
 
 # optimizer
-optimizer = optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-8)  # todo tune WD
+params = itertools.chain(model.parameters(), netw.parameters())
+optimizer = optim.Adam(params, lr=1e-3, weight_decay=1e-8)  # todo tune WD
 print("number of params: ", sum(p.numel() for p in model.parameters()))
 
 model.train()
@@ -221,7 +222,8 @@ for epoch in range(num_epochs):
         gt = labels[0:3]
 
         labels = labels.reshape(batch_size, dim).to(device)
-        digits = minibatch.unsqueeze(1).double().to(device)
+        digits = [[numb == minibatch[i] for numb in range(10)] for i in range(batch_size)]
+        digits = torch.DoubleTensor(digits)
 
         model.zero_grad()
 
@@ -270,7 +272,9 @@ for epoch in range(num_epochs):
 
         # Visualize
         if batch_idx == 0:
-            digits = minibatch[:10].unsqueeze(1).double().to(device)
+
+            digits = [[numb == minibatch[i] for numb in range(10)] for i in range(10)]
+            digits = torch.DoubleTensor(digits)
 
             # Calculate NN-based prior
             means, variances = conditioning(digits, netw)
@@ -279,7 +283,7 @@ for epoch in range(num_epochs):
 
             # prior = MultivariateNormal(mean, torch.diag(variance))
 
-            x = labels[:batch_size] #10
+            x = labels[:10] #batch_size
 
             zs, prior_logprob, log_det = model(x, prior)
             z = zs[-1]

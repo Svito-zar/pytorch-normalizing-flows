@@ -39,6 +39,18 @@ class PositionalEncoder(nn.Module):
         return out
 
 
+
+def weights_init_zeros(m):
+    """Takes in a module and initializes all linear layers with
+        zeros."""
+
+    classname = m.__class__.__name__
+    # for every Linear layer in a model
+    if classname.find('Linear') != -1:
+        nn.init.zeros_(m.bias.data)
+        nn.init.zeros_(m.weight.data)
+
+
 class MLP(nn.Module):
     """ a simple 4-layer MLP """
 
@@ -54,13 +66,17 @@ class MLP(nn.Module):
             nn.Linear(nh, nh),
             nn.Tanh(),
             nn.Dropout(0.2),
+            nn.Linear(nh, nh),
+            nn.Tanh(),
+            nn.Dropout(0.2),
+            nn.Linear(nh, nh),
+            nn.Tanh(),
+            nn.Dropout(0.2),
             nn.Linear(nh, nout),
         )
 
-    """
-    
-    
-    """
+        # Initialize matrix with zeros
+        self.net.apply(weights_init_zeros)
 
     def forward(self, x):
         return self.net(x)
