@@ -91,7 +91,7 @@ class ActNorm(AffineConstantFlow):
     def forward(self, x):
         # first batch is used for init
         if not self.data_dep_init_done:
-            espilon = torch.exp(torch.tensor(-30).float())
+            espilon = torch.exp(torch.tensor(-10).double())
             assert self.s is not None and self.t is not None  # for now
             self.s.data = (-torch.log(x.std(dim=0, keepdim=True) + espilon)).detach()
             self.t.data = (-(x * torch.exp(self.s)).mean(dim=0, keepdim=True)).detach()
@@ -118,9 +118,11 @@ class CouplingLayer(nn.Module):
         # Build scale and translate network
         in_features //= 2
 
-        self.st_net = MLP(in_features, in_features * 2, mid_channels)
+        self.st_net = MLP(in_features, in_features * 2, mid_channels).double()
 
     def forward(self, x):
+
+        x = x.double()
 
         # Channel-wise mask
         if self.reverse_mask:
@@ -310,7 +312,7 @@ class CondPrior(nn.Module):
         """Returns the log-probability of `data` given  parameters `sigma` and `mu`
         """
 
-        target = x.float()
+        target = x.double()
 
         out_shape = self.variances.shape[-1]
         const = .5 * out_shape * math.log(2 * math.pi)
