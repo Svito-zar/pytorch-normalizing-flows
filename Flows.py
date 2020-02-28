@@ -156,9 +156,9 @@ class CouplingLayer(nn.Module):
 
         # Channel-wise mask
         if self.reverse_mask:
-            z_id, z_change = z.chunk(2, dim=1)
+            z_id, z_change = z.double().chunk(2, dim=1)
         else:
-            z_change, z_id = z.chunk(2, dim=1)
+            z_change, z_id = z.double().chunk(2, dim=1)
 
         st = self.st_net(z_id)
         s, t = st.chunk(2, dim=1)
@@ -352,15 +352,15 @@ class NormalizingFlowModel(nn.Module):
 
     def __init__(self, flows, device):
         super().__init__()
-        self.flow = NormalizingFlow(flows, device)
+        self.flow = NormalizingFlow(flows, device).double()
 
     def forward(self, x, prior):
-        zs, log_det = self.flow.forward(x)
+        zs, log_det = self.flow.forward(x.double())
         prior_logprob = prior.log_prob(zs[-1])  # .view(x.size(0), -1).sum(1)
         return zs, prior_logprob, log_det
 
     def backward(self, z):
-        xs, log_det = self.flow.backward(z)
+        xs, log_det = self.flow.backward(z.double())
         return xs, log_det
 
     def sample(self, num_samples, prior):

@@ -56,6 +56,8 @@ class MLP(nn.Module):
 
     def __init__(self, nin, nout, nh):
         super().__init__()
+
+        self.last_layer = nn.Linear(nh, nout)
         self.net = nn.Sequential(
             nn.Linear(nin, nh),
             nn.Tanh(),
@@ -72,11 +74,11 @@ class MLP(nn.Module):
             nn.Linear(nh, nh),
             nn.Tanh(),
             nn.Dropout(0.2),
-            nn.Linear(nh, nout),
+            self.last_layer
         )
 
         # Initialize matrix with zeros
-        self.net.apply(weights_init_zeros)
+        self.last_layer.apply(weights_init_zeros)
 
     def forward(self, x):
         return self.net(x)
