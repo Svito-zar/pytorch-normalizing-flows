@@ -61,19 +61,19 @@ class MLP(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(nin, nh),
             nn.Tanh(),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
             nn.Linear(nh, nh),
             nn.LeakyReLU(),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
             nn.Linear(nh, nh),
             nn.Tanh(),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
             nn.Linear(nh, nh),
             nn.Tanh(),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
             nn.Linear(nh, nh),
             nn.Tanh(),
-            nn.Dropout(0.2),
+            # nn.Dropout(0.2),
             self.last_layer
         )
 

@@ -91,7 +91,7 @@ class ActNorm(AffineConstantFlow):
     def forward(self, x):
         # first batch is used for init
         if not self.data_dep_init_done:
-            espilon = torch.exp(torch.tensor(-1).double())
+            espilon = torch.exp(torch.tensor(-1.0))
             assert self.s is not None and self.t is not None  # for now
             self.s.data = (-torch.log(x.std(dim=0, keepdim=True) + espilon)).detach()
             self.t.data = (-(x * torch.exp(self.s)).mean(dim=0, keepdim=True)).detach()
@@ -118,11 +118,9 @@ class CouplingLayer(nn.Module):
         # Build scale and translate network
         in_features //= 2
 
-        self.st_net = MLP(in_features, in_features * 2, mid_channels).double()
+        self.st_net = MLP(in_features, in_features * 2, mid_channels)
 
     def forward(self, x):
-
-        x = x.double()
 
         # Channel-wise mask
         if self.reverse_mask:
@@ -136,6 +134,8 @@ class CouplingLayer(nn.Module):
         s, t = st.chunk(2, dim=1)
         s = torch.tanh(s)
 
+        new_st = self.st_net(x_id)
+
         # Scale and translate
         exp_s = s.exp()
         if torch.isnan(exp_s).any():
@@ -146,19 +146,61 @@ class CouplingLayer(nn.Module):
         log_det = s.view(s.size(0), -1).sum(-1)
 
         if self.reverse_mask:
-            x = torch.cat((x_id, x_change), dim=1)
+            z = torch.cat((x_id, x_change), dim=1)
         else:
-            x = torch.cat((x_change, x_id), dim=1)
+            z = torch.cat((x_change, x_id), dim=1)
 
-        return x, log_det
+        DEBUG = 0
+
+        if DEBUG:
+
+            # Channel-wise mask
+            if self.reverse_mask:
+                z_id, z_change = z.chunk(2, dim=1)
+            else:
+                z_change, z_id = z.chunk(2, dim=1)
+
+
+            id_diff = z_id - x_id
+            max_id_diff = id_diff.max().item()
+            min_id_diff = id_diff.min().item()
+            print("Id diff is [", min_id_diff, " : ", max_id_diff,"]")
+
+            new_st = self.st_net(z_id)
+            new_s, rec_t = new_st.chunk(2, dim=1)
+            rec_s = torch.tanh(new_s)
+
+            st_diff = new_st - st
+            t_diff = rec_t - t
+
+            st_diff_max = st_diff.max().item()
+            t_diff_max = t_diff.max().item()
+
+            print("ST_diff max: ", st_diff_max)
+            print("T_diff max: ", t_diff_max)
+
+            inv_exp_s = rec_s.mul(-1).exp()
+            if torch.isnan(inv_exp_s).any():
+                raise RuntimeError('Scale factor has NaN entries')
+            z_change = z_change * inv_exp_s - t
+
+            if self.reverse_mask:
+                x_rec = torch.cat((z_id, z_change), dim=1)
+            else:
+                x_rec = torch.cat((z_change, z_id), dim=1)
+
+            # Add log-determinant of the Jacobian
+            log_det = - s.view(s.size(0), -1).sum(-1)
+
+        return z, log_det
 
     def backward(self, z):
 
         # Channel-wise mask
         if self.reverse_mask:
-            z_id, z_change = z.double().chunk(2, dim=1)
+            z_id, z_change = z.chunk(2, dim=1)
         else:
-            z_change, z_id = z.double().chunk(2, dim=1)
+            z_change, z_id = z.chunk(2, dim=1)
 
         st = self.st_net(z_id)
         s, t = st.chunk(2, dim=1)
@@ -298,6 +340,29 @@ class NormalizingFlow(nn.Module):
         return xs, log_det
 
 
+
+class NormalizingFlowModel(nn.Module):
+    """ A Normalizing Flow Model is a (prior, flow) pair """
+
+    def __init__(self, flows, device):
+        super().__init__()
+        self.flow = NormalizingFlow(flows, device)
+
+    def forward(self, x, prior):
+        zs, log_det = self.flow.forward(x)
+        prior_logprob = prior.log_prob(zs[-1])  # .view(x.size(0), -1).sum(1)
+        return zs, prior_logprob, log_det
+
+    def backward(self, z):
+        xs, log_det = self.flow.backward(z)
+        return xs, log_det
+
+    def sample(self, num_samples, prior):
+        z = prior.sample((num_samples,))
+        xs, _ = self.flow.backward(z)
+        return xs
+
+
 class CondPrior(nn.Module):
     """ A conditioned prior which is defined by a different mean and variance for each example in a batch """
 
@@ -312,7 +377,7 @@ class CondPrior(nn.Module):
         """Returns the log-probability of `data` given  parameters `sigma` and `mu`
         """
 
-        target = x.double()
+        target = x
 
         out_shape = self.variances.shape[-1]
         const = .5 * out_shape * math.log(2 * math.pi)
@@ -335,6 +400,8 @@ class CondPrior(nn.Module):
         curr_means = self.means[:sampl_sz]
         curr_sigma = self.variances[:sampl_sz]
 
+        curr_sigma = curr_sigma / 20
+
         sample = curr_means + curr_sigma * epsilon
 
         """ 
@@ -345,25 +412,3 @@ class CondPrior(nn.Module):
         """
 
         return sample
-
-
-class NormalizingFlowModel(nn.Module):
-    """ A Normalizing Flow Model is a (prior, flow) pair """
-
-    def __init__(self, flows, device):
-        super().__init__()
-        self.flow = NormalizingFlow(flows, device).double()
-
-    def forward(self, x, prior):
-        zs, log_det = self.flow.forward(x.double())
-        prior_logprob = prior.log_prob(zs[-1])  # .view(x.size(0), -1).sum(1)
-        return zs, prior_logprob, log_det
-
-    def backward(self, z):
-        xs, log_det = self.flow.backward(z.double())
-        return xs, log_det
-
-    def sample(self, num_samples, prior):
-        z = prior.sample((num_samples,))
-        xs, _ = self.flow.backward(z)
-        return xs

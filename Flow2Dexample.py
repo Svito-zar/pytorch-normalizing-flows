@@ -58,10 +58,10 @@ aff_flow = [AffineConstantFlow(dim=2) for i in range(4)]
 coupling_flow = [CouplingLayer(2, 5, i % 2 == 1) for i in range(4)]
 maf_flow = [SlowMAF(dim=2, parity=True) for _ in aff_flow]
 norms = [ActNorm(dim=2) for _ in coupling_flow]
-flows = list(itertools.chain(*zip(aff_flow, maf_flow, coupling_flow, norms)))
+flows = list(itertools.chain(*zip(norms, coupling_flow, aff_flow)))
 
 # construct the model
-model = NormalizingFlowModel(flows)
+model = NormalizingFlowModel(flows, "cpu")
 
 # optimizer
 optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-8)  # todo tune WD
@@ -72,7 +72,7 @@ mean = torch.zeros(BATCH_SZ, 2)
 variance = torch.ones(BATCH_SZ, 2)
 
 # prior = MultivariateNormal(torch.zeros(2), torch.diag(torch.ones(2)))
-prior = my_prior(mean, variance)
+prior = my_prior(mean, variance, "cpu")
 
 model.train()
 for k in range(10000):
